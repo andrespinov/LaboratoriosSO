@@ -10,7 +10,22 @@ int main(){
     scanf("%d", &x);
     printf("Ingresa n: ");
     scanf("%d", &n);
-    printf("El resultado de 1 + %d + %d^2 + ⋯ + %d^%d es %ld\n",x, x, x, n, progresion(x,n));
+
+    if(n<=2){
+      if(n<=1){
+        if(n==0){
+          printf("El resultado de %d^%d es %ld\n",
+          x,n, progresion(x,n));
+        }else{
+          printf("El resultado de 1 + %d es %ld\n",
+        x, progresion(x,n));
+      }}else{
+      printf("El resultado de 1 + %d + %d^2 es %ld\n",
+      x,x, progresion(x,n));}
+    }else{
+    printf("El resultado de 1 + %d + %d^2 + ⋯ + %d^%d es %ld\n",
+    x, x, x, n, progresion(x,n));}
+
     return 0;
 }
 

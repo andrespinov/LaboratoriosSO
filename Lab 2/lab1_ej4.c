@@ -2,23 +2,27 @@
 #include <string.h>
 #include <stdlib.h>
 
-char *reversar (char a[]);
+char * reversar (char *a);
+char cadena[50];
+int main () {
 
-int main () { 
-    char cadena[50];
     printf("Digite la cadena de caracteres que quiere invertir(maximo 50 digitos):");
-    scanf("%s", &cadena);
-    char *reversa = reversar(cadena);
-    printf ("%s\n", reversa);
-    free(reversa);
+    scanf("%[^\n]", &cadena);
+      //codigo opcional
+    printf ("La cadena original es: %s\n", cadena);
+    printf ("La cadena despues de invertirse: %s\n", reversar(cadena));
     return 0;
 }
 
-char *reversar (char a[]){
-    char *auxiliar = malloc(50);
-    int tamano = strlen(a);
-    for(int i = tamano; i >= 0; i--){
-        auxiliar[tamano - i + 1] = a[i];
+char * reversar (char *a){
+  int len = strlen(a);
+  char temp[len];
+    for(int i=0;i<=len;i++){
+      temp[i]=a[len-i-1];
     }
-   return auxiliar;
+
+  temp[len+1]='\0';
+  strcpy (a,temp); // funcion que copia la cadena de caracteres
+  //strrev(a);
+  return a;
 }
