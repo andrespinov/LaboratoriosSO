@@ -78,7 +78,6 @@ void ejecutarInstruccion(char *param[], int bg) {
         //memcpy(subParam, &param[1], 2*sizeof(*param));
         strcpy(path, "./bin/");
         strcat(path, param[0]);
-        printf("%s",path);
         execv(path, param);
         printf("La instrucción %s no puedo ser encontrada.\n", param[0]);
     } else {
