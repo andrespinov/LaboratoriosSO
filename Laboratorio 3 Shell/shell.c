@@ -4,13 +4,14 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 #include "parser.h"
+#include <time.h>
 
 //Colores para el prompot y el texto ingresado respectivamente.
 #define COLOR_VERDE   "\x1b[32m"
 #define COLOR_BLANCO   "\x1b[0m"
-
 //Declaración de las funciones implementadas.
 void myclear();
+void mytime();
 void ejecutarInstruccion(char *[], int);
 
 int main(int argc, char *argv[]) {
@@ -25,12 +26,15 @@ int main(int argc, char *argv[]) {
         printf(COLOR_VERDE "%s" COLOR_BLANCO" ", prompt);
         fgets (expresion, 100, stdin);
         numParametros = separaItems (expresion, &parametros, &background);
+        //printf("%s", parametros);
         if (numParametros > 0) {
             if (strncmp(parametros[0], "myexit", 6) == 0){
                 ejecucion = 0;
             } else if(strncmp(parametros[0], "myclear", 7) == 0){
                 myclear();
-            } else {
+            } else if (strncmp(parametros[0], "mytime", 6) == 0){
+                mytime();
+            } else{
                 ejecutarInstruccion(parametros, background);
             }
         }
@@ -42,14 +46,29 @@ int main(int argc, char *argv[]) {
  * Método que limpiará la consola, correspondiente al comando myclear del shell.
 **/
 void myclear(){
-
+    system("clear");
 }
+
+
+/**
+ * Método que 
+**/
+void mytime(){
+   int a= time(NULL );
+   a=a/60/60/24/365;
+    printf("No %d.\n",a);
+}
+
+
 
 /**
  * Método que creará un nuevo proceso el cuál se convertirá en la instrucción ingresada.
 **/
 void ejecutarInstruccion(char *param[], int bg) {
+
     pid_t instruccionNueva = fork();
+        //printf(" %s.\n", *param);
+       
     if(instruccionNueva < 0) {
         printf("No se pudo llevar a cabo la instrucción.\n");
         exit(0);
@@ -59,10 +78,11 @@ void ejecutarInstruccion(char *param[], int bg) {
         //memcpy(subParam, &param[1], 2*sizeof(*param));
         strcpy(path, "./bin/");
         strcat(path, param[0]);
-        execl(path, path, *param, NULL);
+        printf("%s",path);
+        execv(path, param);
         printf("La instrucción %s no puedo ser encontrada.\n", param[0]);
     } else {
-        if(bg == 0) {
+        if(bg == 0) {   
             wait(NULL);
         }
     }
