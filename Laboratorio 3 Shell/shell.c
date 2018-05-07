@@ -45,8 +45,8 @@ int main(int argc, char *argv[]) {
 /**
  * Método que limpiará la consola, correspondiente al comando myclear del shell.
 **/
-void myclear(){
-    system("clear");
+void myclear(){ 
+    printf("\e[1;1H\e[2J\n");
 }
 
 
@@ -54,9 +54,10 @@ void myclear(){
  * Método que 
 **/
 void mytime(){
-   int a= time(NULL );
-   a=a/60/60/24/365;
-    printf("No %d.\n",a);
+   time_t fecha;
+   time(&fecha);
+   printf("La fecha actual es: %s",ctime(&fecha));
+
 }
 
 
