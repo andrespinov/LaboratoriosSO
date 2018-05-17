@@ -14,10 +14,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-
+#include <pthread.h>
+#include <semaphore.h>
+#define TAM_BUFFER 10
 #define MAX_BUFFER 100
-//#define DEBUG
-typedef struct p_ {
+
+//Estructura de cada elemento de un archivo
+typedef struct estructura_procesos
+{
   int pid;
   char name[MAX_BUFFER];
   char state[MAX_BUFFER];
@@ -27,41 +31,81 @@ typedef struct p_ {
   char vmstk[MAX_BUFFER];
   int voluntary_ctxt_switches;
   int nonvoluntary_ctxt_switches;
-} proc_info;
+} procesos_info;
 
-void load_info(int pid, proc_info* myinfo);
-void print_info(proc_info* pi);
-  
-int main(int argc, char *argv[]){
+sem_t silencia;
+sem_t lleno;
+sem_t vacio;
+
+
+//Estructura de los identificadores de cada proceso
+typedef struct params
+{
+  FILE *archivo;
+  int pid;
+  procesos_info datos; //aqui se almacena la otra estructura correspondiente a cada proceso
+} parametros;
+
+
+procesos_info load_info(FILE *ficheroStatus);
+void print_info(procesos_info *pi);
+
+int main(int argc, char *argv[])
+{
+
   int i;
+
   // number of process ids passed as command line parameters
-  // (first parameter is the program name) 
+  // (first parameter is the program name)
   int n_procs = argc - 1;
-  proc_info* all_proc;
-  
-  if(argc < 2){
+  parametros *detalles;
+
+  if (argc < 2)
+  {
     printf("Error\n");
     exit(1);
   }
   /*Allocate memory for each process info*/
-  all_proc = (proc_info *)malloc(sizeof(proc_info)*n_procs);
-  assert(all_proc!=NULL);
-  
+  detalles = (parametros *)malloc(sizeof(parametros) * n_procs);
+  //assert(ficheroStatus != NULL);
+  pthread_t hilos[n_procs + 1];
+  sem_init(&silencia, 0, 1);
+  sem_init(&lleno, 0, 0);
+  sem_init(&vacio, 0, TAM_BUFFER);
+
   // Get information from status file
-  for(i = 0; i < n_procs; i++){
-    int pid = atoi(argv[i+1]);
-    load_info(pid, &all_proc[i]);
-  }
-  
-  //print information from all_proc buffer
-  for(i = 0; i < n_procs; i++){
-    print_info(&all_proc[i]);
+  for (i = 0; i < n_procs; i++)
+  {
+    char path[MAX_BUFFER];
+    int pid = atoi(argv[i + 1]);
+    procesos_info process;
+    sprintf(path, "/proc/%d/status", pid);
+    FILE *fpstatus = fopen(path, "r");
+
+    if (fpstatus != NULL)
+    {
+
+      detalles[i].archivo = fpstatus;
+      detalles[i].datos = process;
+      detalles[i].pid = pid;
+      //crear el hilo del proceso i correspondiente
+    }
+    else
+    {
+      printf("El proceso %s no fue encontrado\n\n", argv[i + 1]); 
+      exit(1);
+    }
   }
 
-  // free heap memory
-  free(all_proc);
   
-  return 0;
+
+  // free heap memory
+  free(detalles);
+  sem_destroy(&silencia);
+  sem_destroy(&lleno);
+  sem_destroy(&vacio);
+    return 0;
+  
 }
 
 /**
@@ -72,54 +116,72 @@ int main(int argc, char *argv[]){
  *  \param pid    (in)  process id 
  *  \param myinfo (out) process info struct to be filled
  */
-void load_info(int pid, proc_info* myinfo){
-  FILE *fpstatus;
-  char buffer[MAX_BUFFER]; 
+procesos_info load_info(FILE *ficheroStatus)
+{
+  char buffer[MAX_BUFFER];
   char path[MAX_BUFFER];
-  char* token;
-  
-  sprintf(path, "/proc/%d/status", pid);
-  fpstatus = fopen(path, "r");
-  assert(fpstatus != NULL);
+  procesos_info processinfo;
+  char *token;
+  char *token2 = buffer;
+
 #ifdef DEBUG
   printf("%s\n", path);
 #endif // DEBUG
-  myinfo->pid = pid;
-  while (fgets(buffer, MAX_BUFFER, fpstatus)) {
-    token = strtok(buffer, ":\t");
-    if (strstr(token, "Name")){
-      token = strtok(NULL, ":\t");
-#ifdef  DEBUG
+  
+  while (fgets(buffer, MAX_BUFFER, ficheroStatus))
+  {
+    token = strtok_r(buffer, ":\t", &token2);
+    strcpy(processinfo.pid, token);
+    strcat(processinfo.pid, "\n");
+    if (strstr(token, "Name"))
+    {
+      token = strtok_r(NULL, ":\t", &token2);
+#ifdef DEBUG
       printf("%s\n", token);
 #endif // DEBUG
-      strcpy(myinfo->name, token);
-    }else if (strstr(token, "State")){
-      token = strtok(NULL, ":\t");
-      strcpy(myinfo->state, token);
-    }else if (strstr(token, "VmSize")){
-      token = strtok(NULL, ":\t");
-      strcpy(myinfo->vmsize, token);
-    }else if (strstr(token, "VmData")){
-      token = strtok(NULL, ":\t");
-      strcpy(myinfo->vmdata, token);
-    }else if (strstr(token, "VmStk")){
-      token = strtok(NULL, ":\t");
-      strcpy(myinfo->vmstk, token);
-    }else if (strstr(token, "VmExe")){
-      token = strtok(NULL, ":\t");
-      strcpy(myinfo->vmexe, token);
-    }else if (strstr(token, "nonvoluntary_ctxt_switches")){
-      token = strtok(NULL, ":\t");
-      myinfo->nonvoluntary_ctxt_switches = atoi(token);
-    }else if (strstr(token, "voluntary_ctxt_switches")){
-      token = strtok(NULL, ":\t");
-      myinfo->voluntary_ctxt_switches = atoi(token);
+      strcpy(processinfo.name, token);
     }
-#ifdef  DEBUG
+    else if (strstr(token, "State"))
+    {
+      token = strtok_r(NULL, ":\t", &token2);
+      strcpy(processinfo.state, token);
+    }
+    else if (strstr(token, "VmSize"))
+    {
+      token = strtok_r(NULL, ":\t", &token2);
+      strcpy(processinfo.vmsize, token);
+    }
+    else if (strstr(token, "VmData"))
+    {
+      token = strtok_r(NULL, ":\t", &token2);
+      strcpy(processinfo.vmdata, token);
+    }
+    else if (strstr(token, "VmStk"))
+    {
+      token = strtok_r(NULL, ":\t", &token2);
+      strcpy(processinfo.vmstk, token);
+    }
+    else if (strstr(token, "VmExe"))
+    {
+      token = strtok_r(NULL, ":\t", &token2);
+      strcpy(processinfo.vmexe, token);
+    }
+    else if (strstr(token, "nonvoluntary_ctxt_switches"))
+    {
+      token = strtok_r(NULL, ":\t", &token2);
+      processinfo.nonvoluntary_ctxt_switches = atoi(token);
+    }
+    else if (strstr(token, "voluntary_ctxt_switches"))
+    {
+      token = strtok_r(NULL, ":\t", &token2);
+      processinfo.voluntary_ctxt_switches = atoi(token);
+    }
+#ifdef DEBUG
     printf("%s\n", token);
 #endif
   }
-  fclose(fpstatus);
+  fclose(ficheroStatus);
+  return processinfo;
 }
 /**
  *  \brief print_info
@@ -127,8 +189,9 @@ void load_info(int pid, proc_info* myinfo){
  *  Print process information to stdout stream
  *
  *  \param pi (in) process info struct
- */ 
-void print_info(proc_info* pi){
+ */
+void print_info(procesos_info *pi)
+{
   printf("PID: %d \n", pi->pid);
   printf("Nombre del proceso: %s", pi->name);
   printf("Estado: %s", pi->state);
@@ -137,5 +200,6 @@ void print_info(proc_info* pi){
   printf("TamaÃ±o de la memoria en la regiÃ³n DATA: %s", pi->vmdata);
   printf("TamaÃ±o de la memoria en la regiÃ³n STACK: %s", pi->vmstk);
   printf("NÃºmero de cambios de contexto realizados (voluntarios"
-	 "- no voluntarios): %d  -  %d\n\n", pi->voluntary_ctxt_switches,  pi->nonvoluntary_ctxt_switches);
+         "- no voluntarios): %d  -  %d\n\n",
+         pi->voluntary_ctxt_switches, pi->nonvoluntary_ctxt_switches);
 }
