@@ -16,7 +16,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <semaphore.h>
-#define TAM_BUFFER 10
+#define TAM_BUFFER 30
 #define MAX_BUFFER 100
 
 //Estructura de cada elemento de un archivo
@@ -37,7 +37,8 @@ sem_t silencia;
 sem_t lleno;
 sem_t vacio;
 
-
+procesos_info *productos;
+FILE *fpstatus;
 //Estructura de los identificadores de cada proceso
 typedef struct params
 {
@@ -47,8 +48,9 @@ typedef struct params
 } parametros;
 
 
-procesos_info load_info(FILE *ficheroStatus);
+void load_info(FILE *ficheroStatus);
 void print_info(procesos_info *pi);
+void hilo_impresion();
 
 int main(int argc, char *argv[])
 {
@@ -72,7 +74,6 @@ int main(int argc, char *argv[])
   sem_init(&silencia, 0, 1);
   sem_init(&lleno, 0, 0);
   sem_init(&vacio, 0, TAM_BUFFER);
-
   // Get information from status file
   for (i = 0; i < n_procs; i++)
   {
@@ -80,15 +81,15 @@ int main(int argc, char *argv[])
     int pid = atoi(argv[i + 1]);
     procesos_info process;
     sprintf(path, "/proc/%d/status", pid);
-    FILE *fpstatus = fopen(path, "r");
-
+    fpstatus = fopen(path, "r");
     if (fpstatus != NULL)
     {
-
       detalles[i].archivo = fpstatus;
       detalles[i].datos = process;
       detalles[i].pid = pid;
       //crear el hilo del proceso i correspondiente
+
+      pthread_create (&hilos[i], NULL, &load_info,  detalles[i].archivo);
     }
     else
     {
@@ -116,8 +117,9 @@ int main(int argc, char *argv[])
  *  \param pid    (in)  process id 
  *  \param myinfo (out) process info struct to be filled
  */
-procesos_info load_info(FILE *ficheroStatus)
+void load_info(FILE *ficheroStatus)
 {
+  
   char buffer[MAX_BUFFER];
   char path[MAX_BUFFER];
   procesos_info processinfo;
@@ -127,9 +129,9 @@ procesos_info load_info(FILE *ficheroStatus)
 #ifdef DEBUG
   printf("%s\n", path);
 #endif // DEBUG
-  
+  printf("holi");
   while (fgets(buffer, MAX_BUFFER, ficheroStatus))
-  {
+  { 
     token = strtok_r(buffer, ":\t", &token2);
     strcpy(processinfo.pid, token);
     strcat(processinfo.pid, "\n");
@@ -181,7 +183,8 @@ procesos_info load_info(FILE *ficheroStatus)
 #endif
   }
   fclose(ficheroStatus);
-  return processinfo;
+  print_info(&processinfo);
+  //return processinfo;
 }
 /**
  *  \brief print_info
@@ -202,4 +205,8 @@ void print_info(procesos_info *pi)
   printf("NÃºmero de cambios de contexto realizados (voluntarios"
          "- no voluntarios): %d  -  %d\n\n",
          pi->voluntary_ctxt_switches, pi->nonvoluntary_ctxt_switches);
+}
+
+void hilo_impresion() {
+
 }
