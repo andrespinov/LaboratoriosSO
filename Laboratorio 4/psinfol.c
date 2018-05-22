@@ -16,12 +16,11 @@
 #include <assert.h>
 #include <pthread.h>
 #include <semaphore.h>
-#define TAM_BUFFER 30
+
 #define MAX_BUFFER 100
 
-//Estructura de cada elemento de un archivo
-typedef struct estructura_procesos
-{
+//Declaración de estructuras
+typedef struct p_ {
   int pid;
   char name[MAX_BUFFER];
   char state[MAX_BUFFER];
@@ -31,82 +30,89 @@ typedef struct estructura_procesos
   char vmstk[MAX_BUFFER];
   int voluntary_ctxt_switches;
   int nonvoluntary_ctxt_switches;
-} procesos_info;
+} proc_info;
 
-sem_t silencia;
-sem_t lleno;
-sem_t vacio;
-
-procesos_info *productos;
-FILE *fpstatus;
-//Estructura de los identificadores de cada proceso
-typedef struct params
-{
-  FILE *archivo;
+typedef struct par {
   int pid;
-  procesos_info datos; //aqui se almacena la otra estructura correspondiente a cada proceso
+  FILE *archivo;
 } parametros;
 
+//Declaración de funciones
+proc_info load_info(FILE*);
+void print_info(proc_info*);
+void* productor(void *parametros);
 
-void load_info(FILE *ficheroStatus);
-void print_info(procesos_info *pi);
-void hilo_impresion();
-
-int main(int argc, char *argv[])
-{
-
-  int i;
-
-  // number of process ids passed as command line parameters
-  // (first parameter is the program name)
-  int n_procs = argc - 1;
-  parametros *detalles;
-
-  if (argc < 2)
-  {
+//Declaracion de variables globales
+proc_info buffer[10]; //Se establece un tamaño máximo de 10 procesos en el buffer
+int indice = 0; //Indice del buffer
+sem_t mutex;
+sem_t full;
+sem_t empty;
+  
+//Hilo principal/padre de ejecución
+int main(int argc, char *argv[]){
+  if(argc < 2){
     printf("Error\n");
     exit(1);
   }
-  /*Allocate memory for each process info*/
-  detalles = (parametros *)malloc(sizeof(parametros) * n_procs);
-  //assert(ficheroStatus != NULL);
+
+  int i;
+  int n_procs = argc - 1;
+  parametros* p;
   pthread_t hilos[n_procs + 1];
-  sem_init(&silencia, 0, 1);
-  sem_init(&lleno, 0, 0);
-  sem_init(&vacio, 0, TAM_BUFFER);
-  // Get information from status file
-  for (i = 0; i < n_procs; i++)
-  {
+
+  //Inicialización de los semáforos
+  sem_init(&mutex, 0, 1);
+  sem_init(&full, 0, 0);
+  sem_init(&empty, 0, 10);
+
+  p = (parametros *)malloc(sizeof(parametros) * n_procs);
+  assert(p!=NULL);
+  
+  // Generación del hilo de cada proceso.
+  for(i = 0; i < n_procs; i++){
+    //Abrir el archivo
+    FILE *fpstatus;
     char path[MAX_BUFFER];
     int pid = atoi(argv[i + 1]);
-    procesos_info process;
     sprintf(path, "/proc/%d/status", pid);
     fpstatus = fopen(path, "r");
-    if (fpstatus != NULL)
-    {
-      detalles[i].archivo = fpstatus;
-      detalles[i].datos = process;
-      detalles[i].pid = pid;
-      //crear el hilo del proceso i correspondiente
+    assert(fpstatus != NULL); //El archivo pudo ser abierto correctamente
 
-      pthread_create (&hilos[i], NULL, &load_info,  detalles[i].archivo);
-    }
-    else
-    {
-      printf("El proceso %s no fue encontrado\n\n", argv[i + 1]); 
-      exit(1);
-    }
+    //Generación de la estructura con los parámetros del hilo
+    p[i].archivo = fpstatus;
+    p[i].pid = pid;
+    pthread_create(&hilos[i], NULL, &productor, &p[i]);
+    pthread_join(hilos[i], NULL);
   }
 
+  //Impresión de los procesos generados por los hilos
+  for (i = 0; i < n_procs; i++){
+    sem_wait(&full);
+    sem_wait(&mutex);
+    int j = i % 10;
+    print_info(&buffer[j]);
+    sem_post(&mutex);
+    sem_post(&empty);
+  }
   
-
   // free heap memory
-  free(detalles);
-  sem_destroy(&silencia);
-  sem_destroy(&lleno);
-  sem_destroy(&vacio);
-    return 0;
-  
+  free(p);
+
+  return 0;
+}
+
+//Método encargado de obtener la información del proceso y almacenarlo en el buffer
+void* productor(void *p){
+  parametros *param = (parametros *)p;
+  proc_info proceso = load_info(param->archivo);
+  proceso.pid = param->pid;
+  sem_wait(&empty);
+  sem_wait(&mutex);
+  buffer[indice] = proceso;
+  indice = (indice + 1) % 10;
+  sem_post(&mutex);
+  sem_post(&full);
 }
 
 /**
@@ -117,96 +123,58 @@ int main(int argc, char *argv[])
  *  \param pid    (in)  process id 
  *  \param myinfo (out) process info struct to be filled
  */
-void load_info(FILE *ficheroStatus)
-{
-  
+proc_info load_info(FILE *file){
+  proc_info myinfo;
   char buffer[MAX_BUFFER];
-  char path[MAX_BUFFER];
-  procesos_info processinfo;
-  char *token;
-  char *token2 = buffer;
-
-#ifdef DEBUG
-  printf("%s\n", path);
-#endif // DEBUG
-  printf("holi");
-  while (fgets(buffer, MAX_BUFFER, ficheroStatus))
-  { 
-    token = strtok_r(buffer, ":\t", &token2);
-    strcpy(processinfo.pid, token);
-    strcat(processinfo.pid, "\n");
-    if (strstr(token, "Name"))
-    {
-      token = strtok_r(NULL, ":\t", &token2);
-#ifdef DEBUG
-      printf("%s\n", token);
-#endif // DEBUG
-      strcpy(processinfo.name, token);
+  char* token;
+  
+  while (fgets(buffer, MAX_BUFFER, file)) {
+    token = strtok(buffer, ":\t");
+    if (strstr(token, "Name")){
+      token = strtok(NULL, ":\t");
+      strcpy(myinfo.name, token);
+    }else if (strstr(token, "State")){
+      token = strtok(NULL, ":\t");
+      strcpy(myinfo.state, token);
+    }else if (strstr(token, "VmSize")){
+      token = strtok(NULL, ":\t");
+      strcpy(myinfo.vmsize, token);
+    }else if (strstr(token, "VmData")){
+      token = strtok(NULL, ":\t");
+      strcpy(myinfo.vmdata, token);
+    }else if (strstr(token, "VmStk")){
+      token = strtok(NULL, ":\t");
+      strcpy(myinfo.vmstk, token);
+    }else if (strstr(token, "VmExe")){
+      token = strtok(NULL, ":\t");
+      strcpy(myinfo.vmexe, token);
+    }else if (strstr(token, "nonvoluntary_ctxt_switches")){
+      token = strtok(NULL, ":\t");
+      myinfo.nonvoluntary_ctxt_switches = atoi(token);
+    }else if (strstr(token, "voluntary_ctxt_switches")){
+      token = strtok(NULL, ":\t");
+      myinfo.voluntary_ctxt_switches = atoi(token);
     }
-    else if (strstr(token, "State"))
-    {
-      token = strtok_r(NULL, ":\t", &token2);
-      strcpy(processinfo.state, token);
-    }
-    else if (strstr(token, "VmSize"))
-    {
-      token = strtok_r(NULL, ":\t", &token2);
-      strcpy(processinfo.vmsize, token);
-    }
-    else if (strstr(token, "VmData"))
-    {
-      token = strtok_r(NULL, ":\t", &token2);
-      strcpy(processinfo.vmdata, token);
-    }
-    else if (strstr(token, "VmStk"))
-    {
-      token = strtok_r(NULL, ":\t", &token2);
-      strcpy(processinfo.vmstk, token);
-    }
-    else if (strstr(token, "VmExe"))
-    {
-      token = strtok_r(NULL, ":\t", &token2);
-      strcpy(processinfo.vmexe, token);
-    }
-    else if (strstr(token, "nonvoluntary_ctxt_switches"))
-    {
-      token = strtok_r(NULL, ":\t", &token2);
-      processinfo.nonvoluntary_ctxt_switches = atoi(token);
-    }
-    else if (strstr(token, "voluntary_ctxt_switches"))
-    {
-      token = strtok_r(NULL, ":\t", &token2);
-      processinfo.voluntary_ctxt_switches = atoi(token);
-    }
-#ifdef DEBUG
-    printf("%s\n", token);
-#endif
   }
-  fclose(ficheroStatus);
-  print_info(&processinfo);
-  //return processinfo;
+  fclose(file);
+  return myinfo;
 }
+
 /**
  *  \brief print_info
  *
  *  Print process information to stdout stream
  *
  *  \param pi (in) process info struct
- */
-void print_info(procesos_info *pi)
-{
+ */ 
+void print_info(proc_info* pi){
   printf("PID: %d \n", pi->pid);
-  printf("Nombre del proceso: %s", pi->name);
-  printf("Estado: %s", pi->state);
-  printf("TamaÃ±o total de la imagen de memoria: %s", pi->vmsize);
-  printf("TamaÃ±o de la memoria en la regiÃ³n TEXT: %s", pi->vmexe);
-  printf("TamaÃ±o de la memoria en la regiÃ³n DATA: %s", pi->vmdata);
-  printf("TamaÃ±o de la memoria en la regiÃ³n STACK: %s", pi->vmstk);
-  printf("NÃºmero de cambios de contexto realizados (voluntarios"
-         "- no voluntarios): %d  -  %d\n\n",
-         pi->voluntary_ctxt_switches, pi->nonvoluntary_ctxt_switches);
-}
-
-void hilo_impresion() {
-
+  printf("Nombre del proceso: %s\n", pi->name);
+  printf("Estado: %s\n", pi->state);
+  printf("Tamaño total de la imagen de memoria: %s\n", pi->vmsize);
+  printf("Tamaño de la memoria en la región TEXT: %s\n", pi->vmexe);
+  printf("Tamaño de la memoria en la región DATA: %s\n", pi->vmdata);
+  printf("Tamaño de la memoria en la región STACK: %s\n", pi->vmstk);
+  printf("Número de cambios de contexto realizados (voluntarios"
+	 "- no voluntarios): %d  -  %d\n\n", pi->voluntary_ctxt_switches,  pi->nonvoluntary_ctxt_switches);
 }
